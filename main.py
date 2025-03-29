@@ -9,6 +9,7 @@ class TwoFAWindow(QWidget):
     def __init__(self, parent):
         super().__init__()
         self.parent = parent
+        self.attempts = 0  # Initialize attempts to track how many times the user has tried
         self.initUI()
 
     def initUI(self):
@@ -36,26 +37,34 @@ class TwoFAWindow(QWidget):
     def submit_2fa(self):
         twofa_code = self.twofa.text()
 
-        headers = {
-            "User-Agent": "VRChatClient",
-            "Content-Type": "application/json"
-        }
+        if twofa_code:
+            self.attempts += 1  # Increment the attempt counter
 
-        auth = requests.auth.HTTPBasicAuth(self.parent.username_text, self.parent.password_text)
-        response = self.parent.session.get(f"{VRC_API_URL}/auth/user", headers=headers, auth=auth, params={"twoFactorAuthCode": twofa_code})
+            headers = {
+                "User-Agent": "VRChatClient",
+                "Content-Type": "application/json"
+            }
 
-        if response.status_code == 200:
-            print("Login successful!")
-            self.parent.open_feature_screen()  # Call the parent method to open the feature screen
-            self.close()  # Close 2FA window
+            auth = requests.auth.HTTPBasicAuth(self.parent.username_text, self.parent.password_text)
+            response = self.parent.session.get(f"{VRC_API_URL}/auth/user", headers=headers, auth=auth, params={"twoFactorAuthCode": twofa_code})
+
+            if response.status_code == 200:
+                print("2FA successful!")
+                self.parent.auth_token = self.parent.session.cookies.get('auth')  # Correct cookie key
+                self.parent.open_feature_screen()  # Call the parent method to open the feature screen
+                self.close()  # Close 2FA window
+            else:
+                print(f"2FA failed, attempt {self.attempts}: {response.status_code}")
+                self.status_label.setText(f"Invalid 2FA code. Attempt {self.attempts}.")
         else:
-            print("Invalid 2FA code or error.")
-            self.status_label.setText("Invalid 2FA code.")
+            print("Please enter a 2FA code.")
+            self.status_label.setText("Please enter a valid 2FA code.")
 
 class VRChatLogin(QWidget):
     def __init__(self):
         super().__init__()
         self.session = requests.Session()
+        self.auth_token = None  # Store auth_token here
         self.initUI()
 
     def initUI(self):
@@ -116,6 +125,32 @@ class VRChatLogin(QWidget):
     def open_feature_screen(self):
         self.feature_window = FeatureWindow(self)
         self.feature_window.show()
+        self.fetch_instance_info()  # Fetch instance information after login
+
+    def fetch_instance_info(self):
+        # Ensure that we have the auth_token stored
+        if not self.auth_token:
+            print("Auth token not found. Please log in first.")
+            return
+
+
+        # Assume we can query an endpoint to get instance information
+        instance_info_url = f"{VRC_API_URL}/instance_info"  # Replace with the correct endpoint if needed
+        headers = {
+            "User-Agent": "VRChatClient",
+            "Authorization": f"Bearer {self.auth_token}"  # Use stored auth token
+        }
+
+        response = self.session.get(instance_info_url, headers=headers)
+
+        if response.status_code == 200:
+            instance_data = response.json()
+            # Process and display instance information
+            print("Instance information fetched:")
+            print(instance_data)
+        else:
+            print(f"Error fetching instance information: {response.status_code}")
+            print("Response Text:", response.text)  # Print the response body for further debugging
 
 class FeatureWindow(QWidget):
     def __init__(self, parent):
